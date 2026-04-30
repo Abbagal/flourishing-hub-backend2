@@ -1,0 +1,363 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+  VOLUNTEER
+}
+
+enum CheckInStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum Programme {
+  BTECH
+  MTECH
+  PHD
+  MSC
+  MA
+  OTHER
+}
+
+enum EventType {
+  OPEN_WORKSHOP
+  WELLNESS_COURSE
+  PLACEMENT_WORKSHOP
+  PHD_WORKSHOP
+  OTHER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+enum StaffAssignmentRole {
+  INSTRUCTOR
+  ASSOCIATE_INSTRUCTOR
+  VOLUNTEER
+}
+
+enum ImportJobType {
+  USERS
+  EVENT_REGISTRATIONS
+  EVENTS
+  MARKS
+  ATTENDANCE
+}
+
+enum ImportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  passwordHash       String
+  role               UserRole
+  employeeId         String?            @unique
+  profileImageUrl    String?
+  isActive           Boolean            @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  studentProfile     StudentProfile?
+  instructorProfile  InstructorProfile?
+  adminProfile       AdminProfile?
+  refreshTokens      RefreshToken[]
+  createdEvents      Event[]            @relation("EventCreatedBy")
+  createdTemplates   EventTemplate[]    @relation("TemplateCreatedBy")
+  eventAssignments   EventStaffAssignment[]
+  eventAvailability  EventAvailability[]
+  registrations      EventRegistration[]
+  attendances        AttendanceRecord[]
+  attendanceMarked   AttendanceRecord[] @relation("AttendanceMarkedBy")
+  checkIns           EventCheckIn[]     @relation("CheckInByUser")
+  verifiedCheckIns   EventCheckIn[]     @relation("CheckInVerifiedBy")
+  feedbackEntries    Feedback[]
+  importJobs         ImportJob[]        @relation("ImportCreatedBy")
+}
+
+model StudentProfile {
+  id             String      @id @default(cuid())
+  userId         String      @unique
+  rollNumber     String      @unique
+  department     String
+  yearOfStudy    Int
+  programme      Programme
+  section        String?
+  cohort         String?
+  joinedAt       DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleProgress ModuleProgress[]
+
+  @@index([department, yearOfStudy, programme])
+}
+
+model InstructorProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  designation    String?
+  department     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  employeeId     String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model EventTemplate {
+  id                  String    @id @default(cuid())
+  title               String
+  description         String
+  defaultType         EventType
+  quizLink            String?
+  feedbackLink        String?
+  lockedCoreContent   Boolean   @default(true)
+  defaultModules      Json?
+  createdById         String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           User      @relation("TemplateCreatedBy", fields: [createdById], references: [id])
+  events              Event[]
+}
+
+model Event {
+  id                    String                 @id @default(cuid())
+  title                 String
+  slug                  String                 @unique
+  description           String
+  type                  EventType
+  status                EventStatus            @default(DRAFT)
+  bannerImageUrl        String?
+  venue                 String?
+  meetLink              String?
+  startAt               DateTime
+  endAt                 DateTime
+  registrationOpensAt   DateTime?
+  registrationClosesAt  DateTime?
+  capacity              Int?
+  volunteersNeeded      Int?
+  isCampusWide          Boolean                @default(true)
+  allowVolunteerSignup  Boolean                @default(true)
+  requiresCheckIn       Boolean                @default(true)
+  createdById           String
+  templateId            String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  createdBy             User                   @relation("EventCreatedBy", fields: [createdById], references: [id])
+  template              EventTemplate?         @relation(fields: [templateId], references: [id])
+  modules               EventModule[]
+  registrations         EventRegistration[]
+  assignments           EventStaffAssignment[]
+  availabilityResponses EventAvailability[]
+  checkIns              EventCheckIn[]
+  attendances           AttendanceRecord[]
+  feedbackEntries       Feedback[]
+
+  @@index([status, startAt])
+  @@index([type, startAt])
+}
+
+model EventModule {
+  id                 String            @id @default(cuid())
+  eventId            String
+  title              String
+  description        String?
+  venue              String?
+  meetLink           String?
+  startAt            DateTime
+  endAt              DateTime
+  maxMarks           Int?
+  quizLink           String?
+  feedbackLink       String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  progressEntries    ModuleProgress[]
+  attendances        AttendanceRecord[]
+  checkIns           EventCheckIn[]
+
+  @@index([eventId, startAt])
+}
+
+model EventRegistration {
+  id                 String              @id @default(cuid())
+  eventId            String
+  userId             String
+  status             RegistrationStatus  @default(REGISTERED)
+  isVolunteer        Boolean             @default(false)
+  registeredAt       DateTime            @default(now())
+  checkedInAt        DateTime?
+  notes              String?
+  event              Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId, registeredAt])
+  @@index([eventId, status])
+}
+
+model EventStaffAssignment {
+  id                 String               @id @default(cuid())
+  eventId            String
+  userId             String
+  role               StaffAssignmentRole
+  assignedById       String?
+  notes              String?
+  createdAt          DateTime             @default(now())
+  event              Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId, role])
+  @@index([userId, role])
+}
+
+model EventAvailability {
+  id                 String   @id @default(cuid())
+  eventId            String
+  userId             String
+  isAvailable        Boolean
+  note               String?
+  respondedAt        DateTime @default(now())
+  event              Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, isAvailable])
+}
+
+model EventCheckIn {
+  id                 String        @id @default(cuid())
+  eventId            String
+  moduleId           String?
+  userId             String
+  status             CheckInStatus @default(PENDING)
+  checkedInAt        DateTime      @default(now())
+  note               String?
+  verifiedById       String?
+  event              Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  module             EventModule?  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  user               User          @relation("CheckInByUser", fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy         User?         @relation("CheckInVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([eventId, userId, checkedInAt])
+  @@index([moduleId, status])
+}
+
+model ModuleProgress {
+  id                 String      @id @default(cuid())
+  studentProfileId   String
+  moduleId           String
+  marksObtained      Float?
+  completedAt        DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  studentProfile     StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  module             EventModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([studentProfileId, moduleId])
+  @@index([studentProfileId, completedAt])
+}
+
+model AttendanceRecord {
+  id                 String           @id @default(cuid())
+  eventId            String
+  moduleId           String?
+  userId             String
+  status             AttendanceStatus
+  markedById         String?
+  markedAt           DateTime         @default(now())
+  source             String?
+  event              Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  module             EventModule?     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  markedBy           User?            @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+
+  @@index([eventId, status])
+  @@index([moduleId, userId])
+}
+
+model Feedback {
+  id                 String    @id @default(cuid())
+  eventId            String
+  userId             String
+  eventRating        Int
+  instructorRating   Int?
+  eventComment       String?
+  instructorComment  String?
+  createdAt          DateTime  @default(now())
+  event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, eventRating])
+}
+
+model ImportJob {
+  id                 String          @id @default(cuid())
+  type               ImportJobType
+  status             ImportJobStatus @default(PENDING)
+  fileName           String
+  fileUrl            String?
+  meta               Json?
+  result             Json?
+  createdById        String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  createdBy          User            @relation("ImportCreatedBy", fields: [createdById], references: [id])
+
+  @@index([type, status])
+}
