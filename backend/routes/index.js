@@ -10,6 +10,7 @@ import { registrationRoutes } from "./registration.routes.js";
 import { userRoutes } from "./user.routes.js";
 import { adminRoutes } from "./admin.routes.js";
 import { profileRoutes } from "./profile.routes.js";
+import { videoRoutes } from "./video.routes.js";
 
 export const router = Router();
 
@@ -23,6 +24,7 @@ router.use("/", dashboardRoutes); // Mount dashboard routes at root level
 router.use("/admin", adminRoutes); // Admin management routes
 router.use("/imports", importRoutes);
 router.use("/frontend", frontendRoutes);
+router.use("/videos", videoRoutes); // Video library routes
 
 
 

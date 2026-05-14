@@ -11,7 +11,8 @@ import {
   getEventWithRegistrations,
   deleteEvent,
   removeStaffAssignment,
-  getVolunteersWithActivity
+  getVolunteersWithActivity,
+  getEventDetailsForAdmin
 } from "../services/admin.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -233,5 +234,21 @@ export const getVolunteersController = asyncHandler(async (req, res) => {
   res.status(StatusCodes.OK).json({
     success: true,
     data: volunteers
+  });
+});
+
+
+// GET EVENT DETAILS FOR ADMIN (with registrants, volunteers, attendees)
+export const getEventDetailsForAdminController = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
+  }
+
+  const { eventId } = req.params;
+  const eventDetails = await getEventDetailsForAdmin(eventId);
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    data: eventDetails
   });
 });

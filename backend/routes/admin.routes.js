@@ -12,7 +12,8 @@ import {
   getEventWithRegistrationsController,
   deleteEventController,
   removeStaffAssignmentController,
-  getVolunteersController
+  getVolunteersController,
+  getEventDetailsForAdminController
 } from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -24,6 +25,7 @@ adminRoutes.put("/events/:eventId", authenticate, modifyEventController);
 adminRoutes.delete("/events/:eventId", authenticate, deleteEventController);
 adminRoutes.get("/events", authenticate, getAllEventsController);
 adminRoutes.get("/events-with-registrations", authenticate, getAllEventsWithRegistrationsController);
+adminRoutes.get("/events/:eventId/details", authenticate, getEventDetailsForAdminController); // New detailed route
 adminRoutes.get("/events/:eventId", authenticate, getEventDetailsController);
 adminRoutes.get("/events/:eventId/registrations", authenticate, getEventWithRegistrationsController);
 

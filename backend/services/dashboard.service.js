@@ -255,7 +255,7 @@ export const getVolunteerDashboardData = async (userId) => {
     where: { id: userId }
   });
 
-  const [allEvents, volunteerInterests, volunteerAssignments] = await Promise.all([
+  const [allEvents, volunteerInterests, volunteerAssignments, attendanceRecords, registeredEvents] = await Promise.all([
     // All available events (for volunteering)
     prisma.event.findMany({
       where: {
@@ -285,9 +285,65 @@ export const getVolunteerDashboardData = async (userId) => {
         role: "VOLUNTEER"
       },
       include: {
-        event: true
+        event: {
+          include: {
+            assignments: {
+              where: {
+                role: "INSTRUCTOR"
+              },
+              include: {
+                user: true
+              }
+            }
+          }
+        }
       },
       orderBy: { createdAt: "desc" }
+    }),
+    
+    // Attendance records (workshops attended as participant)
+    prisma.attendanceRecord.findMany({
+      where: { 
+        userId,
+        status: "PRESENT"
+      },
+      include: {
+        event: {
+          include: {
+            assignments: {
+              where: {
+                role: "INSTRUCTOR"
+              },
+              include: {
+                user: true
+              }
+            }
+          }
+        }
+      }
+    }),
+    
+    // Registered events (as participant/student)
+    prisma.eventRegistration.findMany({
+      where: { 
+        userId,
+        status: "REGISTERED"
+      },
+      include: {
+        event: {
+          include: {
+            assignments: {
+              where: {
+                role: "INSTRUCTOR"
+              },
+              include: {
+                user: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { registeredAt: "desc" }
     })
   ]);
 
@@ -300,9 +356,23 @@ export const getVolunteerDashboardData = async (userId) => {
     new Date(a.event.endAt) < new Date()
   );
 
+  // Calculate hours volunteered (from completed duties)
+  const hoursVolunteered = completedDuties.reduce((total, assignment) => {
+    const event = assignment.event;
+    if (event.startAt && event.endAt) {
+      const hours = (new Date(event.endAt).getTime() - new Date(event.startAt).getTime()) / (1000 * 60 * 60);
+      return total + hours;
+    }
+    return total;
+  }, 0);
+
+  // Count workshops attended (as participant, not volunteer)
+  const workshopsAttended = attendanceRecords.length;
+
   // Get interested event IDs
   const interestedEventIds = volunteerInterests.map(vi => vi.eventId);
   const assignedEventIds = volunteerAssignments.map(va => va.eventId);
+  const registeredEventIds = registeredEvents.map(reg => reg.eventId);
 
   // Format available events
   const availableEvents = allEvents.map(event => ({
@@ -315,30 +385,80 @@ export const getVolunteerDashboardData = async (userId) => {
       ? 'ASSIGNED' 
       : interestedEventIds.includes(event.id) 
       ? 'INTERESTED' 
+      : registeredEventIds.includes(event.id)
+      ? 'REGISTERED'
       : 'AVAILABLE'
   }));
 
-  // Format assigned duties (My Duties section)
+  // Format assigned duties (My Duties section) - VOLUNTEERING
   const myDuties = assignedDuties.map(assignment => ({
     eventId: assignment.eventId,
     title: assignment.event.title,
     date: assignment.event.startAt,
     venue: assignment.event.venue,
     role: assignment.role || 'VOLUNTEER',
-    status: 'ASSIGNED'
+    status: 'ASSIGNED',
+    type: 'VOLUNTEERING'
   }));
 
-  // Format completed duties
-  const completedEvents = completedDuties.map(assignment => ({
-    eventId: assignment.eventId,
-    title: assignment.event.title,
-    date: assignment.event.startAt,
-    venue: assignment.event.venue,
-    role: assignment.role || 'VOLUNTEER',
-    marks: null,
-    maxMarks: null,
-    starRating: null
-  }));
+  // Format registered events (as participant) - ATTENDING
+  const myRegistrations = registeredEvents
+    .filter(reg => new Date(reg.event.startAt) > new Date())
+    .map(reg => ({
+      eventId: reg.eventId,
+      title: reg.event.title,
+      date: reg.event.startAt,
+      venue: reg.event.venue,
+      role: 'PARTICIPANT',
+      status: 'REGISTERED',
+      type: 'ATTENDING'
+    }));
+
+  // Combine both volunteering and attending commitments
+  const allCommitments = [...myDuties, ...myRegistrations].sort((a, b) => 
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  // Format completed duties (volunteering)
+  const completedVolunteerEvents = completedDuties.map(assignment => {
+    const instructor = assignment.event.assignments.find(a => a.role === 'INSTRUCTOR');
+    return {
+      eventId: assignment.eventId,
+      title: assignment.event.title,
+      date: assignment.event.startAt,
+      venue: assignment.event.venue,
+      role: assignment.role || 'VOLUNTEER',
+      instructorName: instructor ? instructor.user.name : 'N/A',
+      engagementType: 'VOLUNTEERING',
+      marks: null,
+      maxMarks: null,
+      starRating: null
+    };
+  });
+
+  // Format completed attendance (as participant)
+  const completedAttendanceEvents = attendanceRecords
+    .filter(record => new Date(record.event.endAt) < new Date())
+    .map(record => {
+      const instructor = record.event.assignments.find(a => a.role === 'INSTRUCTOR');
+      return {
+        eventId: record.eventId,
+        title: record.event.title,
+        date: record.event.startAt,
+        venue: record.event.venue,
+        role: 'PARTICIPANT',
+        instructorName: instructor ? instructor.user.name : 'N/A',
+        engagementType: 'ATTENDING',
+        marks: null,
+        maxMarks: null,
+        starRating: null
+      };
+    });
+
+  // Combine all completed events
+  const allCompletedEvents = [...completedVolunteerEvents, ...completedAttendanceEvents].sort((a, b) => 
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   return {
     name: user.name,
@@ -349,9 +469,12 @@ export const getVolunteerDashboardData = async (userId) => {
     batch: 'N/A',
     sessionsVolunteered: volunteerAssignments.length,
     completedDuties: completedDuties.length,
+    hoursVolunteered: Math.round(hoursVolunteered),
+    workshopsAttended: workshopsAttended,
     availableEvents: availableEvents,
     myDuties: myDuties,
-    completedEvents: completedEvents,
+    myCommitments: allCommitments,
+    completedEvents: allCompletedEvents,
     interestedEventIds: interestedEventIds,
     assignedEventIds: assignedEventIds
   };

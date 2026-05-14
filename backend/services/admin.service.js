@@ -567,3 +567,87 @@ export const getVolunteersWithActivity = async () => {
     };
   });
 };
+
+// GET EVENT DETAILS FOR ADMIN
+export const getEventDetailsForAdmin = async (eventId) => {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: {
+      registrations: {
+        include: {
+          user: {
+            include: {
+              studentProfile: true
+            }
+          }
+        },
+        orderBy: {
+          registeredAt: 'desc'
+        }
+      },
+      availabilityResponses: {
+        where: {
+          isAvailable: true
+        },
+        include: {
+          user: true
+        }
+      },
+      assignments: {
+        where: {
+          role: 'VOLUNTEER'
+        },
+        include: {
+          user: true
+        }
+      },
+      attendances: {
+        where: {
+          status: 'PRESENT'
+        },
+        include: {
+          user: {
+            include: {
+              studentProfile: true
+            }
+          }
+        },
+        orderBy: {
+          markedAt: 'desc'
+        }
+      },
+      _count: {
+        select: {
+          registrations: true,
+          attendances: {
+            where: {
+              status: 'PRESENT'
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!event) {
+    throw new Error("Event not found");
+  }
+
+  // Format the response
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    date: event.startAt.toISOString().split('T')[0],
+    time: event.startAt.toTimeString().slice(0, 5),
+    venue: event.venue,
+    mode: event.meetLink ? 'Online' : 'Offline',
+    capacity: event.capacity,
+    status: event.status.toLowerCase(),
+    registeredCount: event._count.registrations,
+    attendedCount: event._count.attendances,
+    registrants: event.registrations,
+    volunteers: [...event.availabilityResponses, ...event.assignments],
+    attendees: event.attendances
+  };
+};
