@@ -4,7 +4,9 @@ import {
   loginController,
   meController,
   refreshController,
-  registerController
+  registerController,
+  verifyOTPController,
+  resendOTPController
 } from "../controllers/auth.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimit.js";
@@ -17,6 +19,10 @@ authRoutes.post("/register", authLimiter, validate(registerSchema), registerCont
 authRoutes.post("/login", authLimiter, validate(loginSchema), loginController);
 authRoutes.post("/refresh", authLimiter, validate(refreshSchema), refreshController);
 authRoutes.get("/me", authenticate, meController);
+
+// OTP verification routes
+authRoutes.post("/verify-otp", authLimiter, verifyOTPController);
+authRoutes.post("/resend-otp", authLimiter, resendOTPController);
 
 
 

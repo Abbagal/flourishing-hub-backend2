@@ -9,6 +9,7 @@ import {
   signRefreshToken,
   verifyRefreshToken
 } from "../utils/jwt.js";
+import { createAndSendOTP } from "./emailVerification.service.js";
 
 const buildAuthResponse = async (user) => {
   const accessToken = signAccessToken({
@@ -69,6 +70,7 @@ export const register = async (payload) => {
       passwordHash,
       role: payload.role,
       profileImageUrl: payload.profileImageUrl,
+      isVerified: false, // New users need to verify email
       studentProfile: payload.studentProfile
         ? {
             create: payload.studentProfile
@@ -89,7 +91,17 @@ export const register = async (payload) => {
     }
   });
 
-  return buildAuthResponse(user);
+  // Send OTP email
+  await createAndSendOTP(user.id, user.email, user.name);
+
+  // Return user data without tokens (need to verify first)
+  return {
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isVerified: user.isVerified
+  };
 };
 
 export const login = async ({ email, password }) => {
@@ -110,6 +122,15 @@ export const login = async ({ email, password }) => {
 
   if (!validPassword) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
+  }
+
+  // Check if email is verified (skip for existing users who don't have isVerified field set)
+  if (user.isVerified === false) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN, 
+      "Please verify your email before logging in",
+      { userId: user.id, email: user.email }
+    );
   }
 
   await prisma.user.update({

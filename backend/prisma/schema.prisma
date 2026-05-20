@@ -95,6 +95,7 @@ model User {
   employeeId         String?            @unique
   profileImageUrl    String?
   isActive           Boolean            @default(true)
+  isVerified         Boolean            @default(false)
   lastLoginAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -113,6 +114,7 @@ model User {
   verifiedCheckIns   EventCheckIn[]     @relation("CheckInVerifiedBy")
   feedbackEntries    Feedback[]
   importJobs         ImportJob[]        @relation("ImportCreatedBy")
+  emailVerifications EmailVerification[]
 }
 
 model StudentProfile {
@@ -384,4 +386,18 @@ model Video {
 
   @@index([category])
   @@index([isActive])
+}
+
+model EmailVerification {
+  id                 String    @id @default(cuid())
+  userId             String
+  otp                String
+  expiresAt          DateTime
+  attempts           Int       @default(0)
+  isUsed             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([otp, isUsed])
 }
