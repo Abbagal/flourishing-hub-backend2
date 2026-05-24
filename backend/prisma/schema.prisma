@@ -216,10 +216,15 @@ model Event {
   requiresCheckIn       Boolean                @default(true)
   createdById           String
   templateId            String?
+  courseId              String?
+  courseModuleId        String?
+  batch                 String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   createdBy             User                   @relation("EventCreatedBy", fields: [createdById], references: [id])
   template              EventTemplate?         @relation(fields: [templateId], references: [id])
+  course                Course?                @relation("EventCourse", fields: [courseId], references: [id], onDelete: SetNull)
+  courseModule          CourseModule?          @relation("EventFromModule", fields: [courseModuleId], references: [id], onDelete: SetNull)
   modules               EventModule[]
   registrations         EventRegistration[]
   assignments           EventStaffAssignment[]
@@ -230,6 +235,8 @@ model Event {
 
   @@index([status, startAt])
   @@index([type, startAt])
+  @@index([courseId])
+  @@index([courseModuleId])
 }
 
 model EventModule {
@@ -419,6 +426,7 @@ model Course {
   id                 String        @id @default(cuid())
   name               String
   description        String
+  posterUrl          String?
   duration           String?
   instructorName     String?
   status             CourseStatus  @default(ACTIVE)
@@ -429,6 +437,30 @@ model Course {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
+  modules            CourseModule[]
+  events             Event[]       @relation("EventCourse")
+
   @@index([status])
   @@index([startDate])
+}
+
+model CourseModule {
+  id              String    @id @default(cuid())
+  courseId        String
+  title           String
+  description     String?
+  posterUrl       String?
+  quizLink        String?
+  feedbackLink    String?
+  duration        String?
+  order           Int       @default(0)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  events          Event[]   @relation("EventFromModule")
+
+  @@index([courseId, order])
+  @@index([isActive])
 }

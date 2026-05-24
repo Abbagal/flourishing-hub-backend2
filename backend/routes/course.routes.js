@@ -1,25 +1,26 @@
 import express from "express";
 import * as courseController from "../controllers/course.controller.js";
+import * as courseModuleController from "../controllers/courseModule.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// All course routes require authentication
 router.use(authenticate);
 
-// Get all courses
+// Course CRUD
 router.get("/", courseController.getAllCourses);
-
-// Get course by ID
-router.get("/:courseId", courseController.getCourseById);
-
-// Create course (admin only)
 router.post("/", courseController.createCourse);
-
-// Update course (admin only)
+router.get("/:courseId/analytics", courseController.getCourseAnalytics);
+router.get("/:courseId", courseController.getCourseById);
 router.put("/:courseId", courseController.updateCourse);
-
-// Delete course (admin only)
 router.delete("/:courseId", courseController.deleteCourse);
+
+// Module routes nested under courses
+router.get("/:courseId/modules", courseModuleController.listModules);
+router.post("/:courseId/modules", courseModuleController.createModule);
+router.get("/:courseId/modules/:id/usage", courseModuleController.getModuleUsage);
+router.get("/:courseId/modules/:id", courseModuleController.getModule);
+router.put("/:courseId/modules/:id", courseModuleController.updateModule);
+router.delete("/:courseId/modules/:id", courseModuleController.deleteModule);
 
 export default router;

@@ -15,7 +15,9 @@ import {
   getEventDetailsForAdmin,
   getPendingApprovalUsers,
   approveUser,
-  declineUser
+  declineUser,
+  createEventFromModule,
+  getEventAnalytics
 } from "../services/admin.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -313,4 +315,34 @@ export const declineUserController = asyncHandler(async (req, res) => {
     message: "User declined successfully",
     data: user
   });
+});
+
+// CREATE EVENT FROM MODULE
+export const createEventFromModuleController = asyncHandler(async (req, res) => {
+  if (!req.user.adminProfile) {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  }
+
+  const { moduleId } = req.body;
+  if (!moduleId) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "moduleId is required");
+  }
+
+  const event = await createEventFromModule(moduleId, req.body, req.user.id);
+  res.status(StatusCodes.CREATED).json({ success: true, data: event });
+});
+
+// GET EVENT ANALYTICS
+export const getEventAnalyticsController = asyncHandler(async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
+  }
+
+  const filters = {
+    courseId: req.query.courseId,
+    moduleId: req.query.moduleId
+  };
+
+  const analytics = await getEventAnalytics(filters);
+  res.status(StatusCodes.OK).json({ success: true, data: analytics });
 });

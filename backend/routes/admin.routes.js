@@ -16,7 +16,9 @@ import {
   getEventDetailsForAdminController,
   getPendingApprovalUsersController,
   approveUserController,
-  declineUserController
+  declineUserController,
+  createEventFromModuleController,
+  getEventAnalyticsController
 } from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -48,3 +50,9 @@ adminRoutes.get("/volunteers", authenticate, getVolunteersController);
 adminRoutes.get("/pending-approvals", authenticate, getPendingApprovalUsersController);
 adminRoutes.post("/users/:userId/approve", authenticate, approveUserController);
 adminRoutes.post("/users/:userId/decline", authenticate, declineUserController);
+
+// Workshop Analytics
+adminRoutes.get("/events/analytics", authenticate, getEventAnalyticsController);
+
+// Create Event from Module
+adminRoutes.post("/events/from-module", authenticate, createEventFromModuleController);

@@ -2,70 +2,68 @@ import { prisma } from "../database/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
 import { StatusCodes } from "http-status-codes";
 
-// Get all courses
 export const getAllCourses = async (filters = {}) => {
   const { status } = filters;
-  
   const where = {};
-  if (status) {
-    where.status = status;
-  }
+  if (status) where.status = status;
 
-  const courses = await prisma.course.findMany({
+  return prisma.course.findMany({
     where,
-    orderBy: {
-      createdAt: 'desc'
-    }
+    include: {
+      _count: {
+        select: { modules: true, events: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
   });
-
-  return courses;
 };
 
-// Get course by ID
 export const getCourseById = async (courseId) => {
   const course = await prisma.course.findUnique({
-    where: { id: courseId }
+    where: { id: courseId },
+    include: {
+      modules: {
+        where: { isActive: true },
+        include: { _count: { select: { events: true } } },
+        orderBy: { order: "asc" },
+      },
+      _count: { select: { modules: true, events: true } },
+    },
   });
 
   if (!course) {
     throw new ApiError(StatusCodes.NOT_FOUND, "Course not found");
   }
-
   return course;
 };
 
-// Create course
 export const createCourse = async (data) => {
-  const course = await prisma.course.create({
+  return prisma.course.create({
     data: {
       name: data.name,
       description: data.description,
+      posterUrl: data.posterUrl,
       duration: data.duration,
       instructorName: data.instructorName,
-      status: data.status || 'ACTIVE',
+      status: data.status || "ACTIVE",
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       capacity: data.capacity,
-      enrolledCount: 0
-    }
+      enrolledCount: 0,
+    },
   });
-
-  return course;
 };
 
-// Update course
 export const updateCourse = async (courseId, data) => {
-  const existingCourse = await prisma.course.findUnique({
-    where: { id: courseId }
-  });
-
-  if (!existingCourse) {
+  const existing = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!existing) {
     throw new ApiError(StatusCodes.NOT_FOUND, "Course not found");
   }
 
   const updateData = {};
   if (data.name !== undefined) updateData.name = data.name;
   if (data.description !== undefined) updateData.description = data.description;
+  if (data.posterUrl !== undefined) updateData.posterUrl = data.posterUrl;
   if (data.duration !== undefined) updateData.duration = data.duration;
   if (data.instructorName !== undefined) updateData.instructorName = data.instructorName;
   if (data.status !== undefined) updateData.status = data.status;
@@ -73,27 +71,63 @@ export const updateCourse = async (courseId, data) => {
   if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate) : null;
   if (data.capacity !== undefined) updateData.capacity = data.capacity;
 
-  const course = await prisma.course.update({
-    where: { id: courseId },
-    data: updateData
-  });
-
-  return course;
+  return prisma.course.update({ where: { id: courseId }, data: updateData });
 };
 
-// Delete course
 export const deleteCourse = async (courseId) => {
-  const existingCourse = await prisma.course.findUnique({
-    where: { id: courseId }
+  const existing = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!existing) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "Course not found");
+  }
+  await prisma.course.delete({ where: { id: courseId } });
+  return { message: "Course deleted successfully" };
+};
+
+export const getCourseAnalytics = async (courseId) => {
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: {
+      modules: {
+        include: {
+          _count: { select: { events: true } },
+          events: {
+            select: {
+              id: true,
+              title: true,
+              startAt: true,
+              status: true,
+              batch: true,
+              _count: { select: { registrations: true } },
+            },
+            orderBy: { startAt: "desc" },
+          },
+        },
+        orderBy: { order: "asc" },
+      },
+      _count: { select: { modules: true, events: true } },
+    },
   });
 
-  if (!existingCourse) {
+  if (!course) {
     throw new ApiError(StatusCodes.NOT_FOUND, "Course not found");
   }
 
-  await prisma.course.delete({
-    where: { id: courseId }
-  });
+  const totalWorkshops = course._count.events;
+  const moduleStats = course.modules.map((m) => ({
+    moduleId: m.id,
+    moduleTitle: m.title,
+    usageCount: m._count.events,
+    recentWorkshops: m.events.slice(0, 3),
+  }));
 
-  return { message: "Course deleted successfully" };
+  const mostUsed = [...moduleStats].sort((a, b) => b.usageCount - a.usageCount).slice(0, 5);
+
+  return {
+    courseId: course.id,
+    courseName: course.name,
+    totalModules: course._count.modules,
+    totalWorkshops,
+    moduleStats,
+    mostUsedModules: mostUsed,
+  };
 };

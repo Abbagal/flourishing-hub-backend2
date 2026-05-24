@@ -329,6 +329,8 @@ export const getAllEventsWithRegistrations = async (filters = {}) => {
     where: whereClause,
     include: {
       createdBy: true,
+      course: { select: { id: true, name: true, posterUrl: true } },
+      courseModule: { select: { id: true, title: true } },
       registrations: {
         include: {
           user: {
@@ -380,6 +382,101 @@ export const getAllEventsWithRegistrations = async (filters = {}) => {
       available: event.capacity - event._count.registrations
     }
   }));
+};
+
+// CREATE EVENT FROM MODULE (auto-fill module data)
+export const createEventFromModule = async (moduleId, eventData, createdById) => {
+  const module = await prisma.courseModule.findUnique({
+    where: { id: moduleId },
+    include: { course: true }
+  });
+
+  if (!module) {
+    throw new Error('Module not found');
+  }
+
+  const baseSlug = (eventData.title || module.title).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const uniqueSlug = `${baseSlug}-${Date.now()}`;
+
+  return prisma.event.create({
+    data: {
+      ...eventData,
+      courseId: module.courseId,
+      courseModuleId: moduleId,
+      createdById,
+      slug: uniqueSlug
+    },
+    include: {
+      course: { select: { id: true, name: true } },
+      courseModule: { select: { id: true, title: true } }
+    }
+  });
+};
+
+// GET EVENT ANALYTICS (workshops grouped by course/module)
+export const getEventAnalytics = async (filters = {}) => {
+  const { courseId, moduleId } = filters;
+
+  const where = {};
+  if (courseId) where.courseId = courseId;
+  if (moduleId) where.courseModuleId = moduleId;
+
+  const [totalWorkshops, byCourse, byModule, recent] = await Promise.all([
+    prisma.event.count({ where }),
+    prisma.event.groupBy({
+      by: ['courseId'],
+      where: { courseId: { not: null }, ...where },
+      _count: { id: true }
+    }),
+    prisma.event.groupBy({
+      by: ['courseModuleId'],
+      where: { courseModuleId: { not: null }, ...where },
+      _count: { id: true }
+    }),
+    prisma.event.findMany({
+      where: { courseId: { not: null }, ...where },
+      include: {
+        course: { select: { id: true, name: true } },
+        courseModule: { select: { id: true, title: true } },
+        _count: { select: { registrations: true } }
+      },
+      orderBy: { startAt: 'desc' },
+      take: 10
+    })
+  ]);
+
+  // Resolve course names
+  const courseIds = byCourse.map(r => r.courseId).filter(Boolean);
+  const courses = courseIds.length
+    ? await prisma.course.findMany({ where: { id: { in: courseIds } }, select: { id: true, name: true } })
+    : [];
+  const courseMap = Object.fromEntries(courses.map(c => [c.id, c.name]));
+
+  // Resolve module titles
+  const moduleIds = byModule.map(r => r.courseModuleId).filter(Boolean);
+  const modules = moduleIds.length
+    ? await prisma.courseModule.findMany({ where: { id: { in: moduleIds } }, select: { id: true, title: true } })
+    : [];
+  const moduleMap = Object.fromEntries(modules.map(m => [m.id, m.title]));
+
+  return {
+    totalWorkshops,
+    uniqueModulesUsed: byModule.length,
+    byCourse: byCourse.map(r => ({ courseId: r.courseId, courseName: courseMap[r.courseId] || 'Unknown', count: r._count.id })),
+    byModule: byModule
+      .map(r => ({ moduleId: r.courseModuleId, moduleTitle: moduleMap[r.courseModuleId] || 'Unknown', count: r._count.id }))
+      .sort((a, b) => b.count - a.count),
+    recentWorkshops: recent.map(e => ({
+      id: e.id,
+      title: e.title,
+      courseName: e.course?.name,
+      moduleTitle: e.courseModule?.title,
+      batch: e.batch,
+      startAt: e.startAt,
+      registrations: e._count.registrations,
+      status: e.status
+    }))
+  };
 };
 
 // DELETE EVENT
