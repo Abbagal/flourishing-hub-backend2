@@ -86,6 +86,12 @@ enum VideoCategory {
   WELLNESS
 }
 
+enum CourseStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 enum ApprovalStatus {
   APPROVED
   PENDING_APPROVAL
@@ -407,4 +413,22 @@ model EmailVerification {
 
   @@index([userId, expiresAt])
   @@index([otp, isUsed])
+}
+
+model Course {
+  id                 String        @id @default(cuid())
+  name               String
+  description        String
+  duration           String?
+  instructorName     String?
+  status             CourseStatus  @default(ACTIVE)
+  startDate          DateTime?
+  endDate            DateTime?
+  capacity           Int?
+  enrolledCount      Int           @default(0)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([status])
+  @@index([startDate])
 }
