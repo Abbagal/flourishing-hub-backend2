@@ -421,8 +421,9 @@ export const getMyAttendance = async (userId) => {
 };
 
 export const getMyAssignedEvents = async (actor) => {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // Show events from the last 30 days onwards so past/ongoing events are still accessible
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const assignments = await prisma.eventStaffAssignment.findMany({
     where: {
@@ -430,7 +431,7 @@ export const getMyAssignedEvents = async (actor) => {
       role: "ASSOCIATE_INSTRUCTOR",
       event: {
         status: "PUBLISHED",
-        startAt: { gte: todayStart }
+        startAt: { gte: thirtyDaysAgo }
       }
     },
     include: {
@@ -442,7 +443,7 @@ export const getMyAssignedEvents = async (actor) => {
         }
       }
     },
-    orderBy: { event: { startAt: "asc" } }
+    orderBy: { event: { startAt: "desc" } }
   });
 
   return assignments.map((a) => ({
