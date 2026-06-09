@@ -264,7 +264,6 @@ export const reviewCheckIn = async (checkInId, payload, actor) => {
       },
       actor
     );
-    // Notify the student their attendance is verified
     createNotification(
       checkIn.userId,
       "success",
@@ -274,6 +273,21 @@ export const reviewCheckIn = async (checkInId, payload, actor) => {
   }
 
   if (payload.status === "REJECTED") {
+    // Revert AttendanceRecord back to ABSENT (was set to PRESENT on verify)
+    const existingAttendance = await prisma.attendanceRecord.findFirst({
+      where: { eventId: checkIn.eventId, userId: checkIn.userId }
+    });
+    if (existingAttendance) {
+      await prisma.attendanceRecord.update({
+        where: { id: existingAttendance.id },
+        data: { status: "ABSENT", markedById: actor.id, markedAt: new Date() }
+      });
+    }
+    // Revert EventRegistration back to REGISTERED
+    await prisma.eventRegistration.update({
+      where: { eventId_userId: { eventId: checkIn.eventId, userId: checkIn.userId } },
+      data: { status: "REGISTERED", checkedInAt: null }
+    }).catch(() => {});
     createNotification(
       checkIn.userId,
       "warning",
@@ -397,7 +411,7 @@ export const verifyAllCheckIns = async (eventId, actor) => {
 };
 
 export const getMyAttendance = async (userId) => {
-  const [registrations, attendanceRecords, verifiedCheckIns] = await Promise.all([
+  const [registrations, attendanceRecords, verifiedCheckIns, moduleProgress, feedbacks] = await Promise.all([
     prisma.eventRegistration.findMany({
       where: {
         userId,
@@ -413,8 +427,29 @@ export const getMyAttendance = async (userId) => {
       orderBy: { registeredAt: "desc" }
     }),
     prisma.attendanceRecord.findMany({ where: { userId } }),
-    prisma.eventCheckIn.findMany({ where: { userId, status: "VERIFIED" } })
+    prisma.eventCheckIn.findMany({ where: { userId, status: "VERIFIED" } }),
+    prisma.moduleProgress.findMany({
+      where: { studentProfile: { userId } },
+      include: { module: { select: { eventId: true, maxMarks: true } } }
+    }),
+    prisma.feedback.findMany({ where: { userId } })
   ]);
+
+  // Build lookup: eventId → aggregated marks (only when at least one score is entered)
+  const marksMap = {};
+  for (const mp of moduleProgress) {
+    if (mp.marksObtained == null) continue; // score not entered yet — skip
+    const eid = mp.module.eventId;
+    if (!marksMap[eid]) marksMap[eid] = { marksObtained: 0, maxMarks: 0 };
+    marksMap[eid].marksObtained += mp.marksObtained;
+    marksMap[eid].maxMarks += mp.module.maxMarks ?? 100;
+  }
+
+  // Build lookup: eventId → eventRating
+  const ratingMap = {};
+  for (const fb of feedbacks) {
+    ratingMap[fb.eventId] = fb.eventRating;
+  }
 
   return registrations.map((reg) => {
     const attendance = attendanceRecords.find((a) => a.eventId === reg.eventId);
@@ -427,12 +462,18 @@ export const getMyAttendance = async (userId) => {
       status = "EXCUSED";
     }
 
+    const marks = marksMap[reg.eventId];
+
     return {
       eventId: reg.eventId,
       eventTitle: reg.event.title,
       courseName: reg.event.course?.name || null,
+      venue: reg.event.venue || null,
       date: reg.event.startAt,
-      status
+      status,
+      marks: marks?.marksObtained != null ? marks.marksObtained : null,
+      maxMarks: marks?.maxMarks != null ? marks.maxMarks : null,
+      starRating: ratingMap[reg.eventId] ?? null
     };
   });
 };

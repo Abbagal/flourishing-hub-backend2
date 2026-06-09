@@ -145,6 +145,10 @@ export const listEvents = async (query) => {
   const where = {
     status: query.status || "PUBLISHED",
     ...(query.type ? { type: query.type } : {}),
+    // By default exclude events that fully ended (endAt < now), unless caller passes activeOnly=false
+    ...(query.activeOnly !== "false"
+      ? { endAt: { gte: new Date() } }
+      : {}),
     ...(query.upcomingOnly === "true"
       ? {
           startAt: {
