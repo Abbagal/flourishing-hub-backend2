@@ -25,8 +25,8 @@ import { ApiError } from "../utils/ApiError.js";
 
 // CREATE EVENT
 export const createEventController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   console.log("📝 Creating event with data:", req.body);
@@ -44,8 +44,8 @@ export const createEventController = asyncHandler(async (req, res) => {
 
 // MODIFY EVENT
 export const modifyEventController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { eventId } = req.params;
@@ -59,8 +59,8 @@ export const modifyEventController = asyncHandler(async (req, res) => {
 
 // ASSIGN INSTRUCTOR / ASSOCIATE INSTRUCTOR
 export const assignStaffController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { eventId, userId, role } = req.body;
@@ -79,8 +79,8 @@ export const assignStaffController = asyncHandler(async (req, res) => {
 
 // ASSIGN VOLUNTEERS
 export const assignVolunteersController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { eventId, userIds } = req.body;
@@ -121,8 +121,8 @@ export const getMemberDirectoryController = asyncHandler(async (req, res) => {
 
 // GET EVENT DETAILS
 export const getEventDetailsController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { eventId } = req.params;
@@ -201,8 +201,8 @@ export const getEventWithRegistrationsController = asyncHandler(async (req, res)
 
 // DELETE EVENT
 export const deleteEventController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { eventId } = req.params;
@@ -216,8 +216,8 @@ export const deleteEventController = asyncHandler(async (req, res) => {
 
 // REMOVE STAFF ASSIGNMENT
 export const removeStaffAssignmentController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { assignmentId } = req.params;
@@ -320,8 +320,8 @@ export const declineUserController = asyncHandler(async (req, res) => {
 
 // CREATE EVENT FROM MODULE
 export const createEventFromModuleController = asyncHandler(async (req, res) => {
-  if (!req.user.adminProfile) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Admin access required");
+  if (req.user.role !== 'ADMIN') {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
   }
 
   const { moduleId } = req.body;
