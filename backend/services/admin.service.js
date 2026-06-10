@@ -546,60 +546,161 @@ export const getWorkshopAnalyticsTable = async () => {
       course: { select: { id: true, name: true } },
       courseModule: { select: { id: true, title: true } },
       assignments: {
-        where: { role: "INSTRUCTOR" },
-        include: { user: { select: { id: true, name: true } } },
-        take: 1
+        include: { user: { select: { id: true, name: true, role: true } } }
       },
       registrations: {
-        select: { id: true, status: true, userId: true, user: { select: { name: true, email: true, studentProfile: { select: { rollNumber: true } } } } }
+        select: {
+          id: true, status: true, userId: true,
+          user: {
+            select: {
+              id: true, name: true, email: true,
+              studentProfile: { select: { id: true, rollNumber: true, cohort: true } }
+            }
+          }
+        }
       },
       attendances: {
-        select: { id: true, status: true, userId: true, user: { select: { name: true, email: true, studentProfile: { select: { rollNumber: true } } } } }
+        select: { status: true, userId: true }
       },
-      feedbackEntries: { select: { eventRating: true, instructorRating: true } }
+      feedbackEntries: { select: { eventRating: true, userId: true } },
+      modules: {
+        select: {
+          id: true,
+          progressEntries: {
+            select: { studentProfileId: true, marksObtained: true, completedAt: true }
+          }
+        }
+      }
     },
     orderBy: { startAt: "desc" }
   });
 
   return events.map(event => {
-    const totalRegistered = event.registrations.length;
-    const present = event.attendances.filter(a => a.status === "PRESENT");
-    const absent = event.attendances.filter(a => a.status === "ABSENT");
+    // Build lookup maps
+    const attendanceMap = {};
+    event.attendances.forEach(a => { attendanceMap[a.userId] = a.status; });
+
+    const feedbackMap = {};
+    event.feedbackEntries.forEach(f => { feedbackMap[f.userId] = f.eventRating; });
+
+    // Module progress keyed by studentProfileId
+    const progressMap = {};
+    event.modules.forEach(mod => {
+      mod.progressEntries.forEach(p => {
+        if (!progressMap[p.studentProfileId]) {
+          progressMap[p.studentProfileId] = { marks: null, completed: false };
+        }
+        if (p.marksObtained != null) {
+          progressMap[p.studentProfileId].marks =
+            (progressMap[p.studentProfileId].marks || 0) + p.marksObtained;
+        }
+        if (p.completedAt) progressMap[p.studentProfileId].completed = true;
+      });
+    });
+
+    // Per-student list with all required fields
+    const students = event.registrations.map(reg => {
+      const spId = reg.user.studentProfile?.id;
+      const progress = spId ? progressMap[spId] : null;
+      return {
+        name: reg.user.name,
+        email: reg.user.email,
+        rollNo: reg.user.studentProfile?.rollNumber || "—",
+        batch: reg.user.studentProfile?.cohort || "—",
+        attendanceStatus: attendanceMap[reg.userId] || "NOT_MARKED",
+        quizCompleted: progress?.completed || false,
+        score: progress?.marks ?? null,
+        rating: feedbackMap[reg.userId] || null,
+        registrationStatus: reg.status
+      };
+    });
+
+    const instructor = event.assignments.find(a => a.role === "INSTRUCTOR");
+    const associateInstructor = event.assignments.find(a => a.role === "ASSOCIATE_INSTRUCTOR");
+    const volunteers = event.assignments.filter(a => a.role === "VOLUNTEER");
+
+    const present = students.filter(s => s.attendanceStatus === "PRESENT");
     const ratings = event.feedbackEntries.map(f => f.eventRating).filter(Boolean);
     const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
-    const instructorName = event.assignments[0]?.user?.name || "—";
 
     return {
       id: event.id,
       workshopName: event.title,
       courseName: event.course?.name || "—",
       moduleName: event.courseModule?.title || "—",
-      instructorName,
+      instructorName: instructor?.user?.name || "—",
+      associateInstructorName: associateInstructor?.user?.name || "—",
+      volunteerNames: volunteers.map(v => v.user.name),
       date: event.startAt,
       batch: event.batch || "—",
       venue: event.venue || "—",
-      totalRegistered,
+      totalRegistered: event.registrations.length,
       totalAttended: present.length,
-      totalAbsent: absent.length,
+      totalAbsent: event.attendances.filter(a => a.status === "ABSENT").length,
       avgRating,
-      presentStudents: present.map(a => ({
-        name: a.user.name,
-        email: a.user.email,
-        rollNo: a.user.studentProfile?.rollNumber || "—"
-      })),
-      absentStudents: absent.map(a => ({
-        name: a.user.name,
-        email: a.user.email,
-        rollNo: a.user.studentProfile?.rollNumber || "—"
-      })),
-      allRegistrants: event.registrations.map(r => ({
-        name: r.user.name,
-        email: r.user.email,
-        rollNo: r.user.studentProfile?.rollNumber || "—",
-        status: r.status
-      }))
+      students,
+      // Backward compat
+      presentStudents: present.map(s => ({ name: s.name, email: s.email, rollNo: s.rollNo })),
+      absentStudents: students.filter(s => s.attendanceStatus === "ABSENT").map(s => ({ name: s.name, email: s.email, rollNo: s.rollNo })),
+      allRegistrants: students.map(s => ({ name: s.name, email: s.email, rollNo: s.rollNo, status: s.registrationStatus }))
     };
   });
+};
+
+// GET ASSOCIATE INSTRUCTORS AND VOLUNTEERS FOR A COURSE
+export const getCourseStaff = async (courseId) => {
+  const events = await prisma.event.findMany({
+    where: { courseId },
+    select: {
+      id: true,
+      title: true,
+      startAt: true,
+      assignments: {
+        where: { role: { in: ["ASSOCIATE_INSTRUCTOR", "VOLUNTEER"] } },
+        include: {
+          user: {
+            select: {
+              id: true, name: true, email: true, role: true,
+              studentProfile: { select: { rollNumber: true, department: true } },
+              instructorProfile: { select: { designation: true, department: true } }
+            }
+          }
+        }
+      }
+    },
+    orderBy: { startAt: "asc" }
+  });
+
+  const associateInstructorMap = {};
+  const volunteerMap = {};
+
+  events.forEach(event => {
+    event.assignments.forEach(a => {
+      if (a.role === "ASSOCIATE_INSTRUCTOR") {
+        associateInstructorMap[a.user.id] = {
+          id: a.user.id,
+          name: a.user.name,
+          email: a.user.email,
+          designation: a.user.instructorProfile?.designation || "—",
+          department: a.user.instructorProfile?.department || a.user.studentProfile?.department || "—"
+        };
+      } else if (a.role === "VOLUNTEER") {
+        volunteerMap[a.user.id] = {
+          id: a.user.id,
+          name: a.user.name,
+          email: a.user.email,
+          rollNo: a.user.studentProfile?.rollNumber || "—",
+          department: a.user.studentProfile?.department || "—"
+        };
+      }
+    });
+  });
+
+  return {
+    courseId,
+    associateInstructors: Object.values(associateInstructorMap),
+    volunteers: Object.values(volunteerMap)
+  };
 };
 
 // DELETE EVENT

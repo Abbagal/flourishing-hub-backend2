@@ -19,7 +19,8 @@ import {
   declineUserController,
   createEventFromModuleController,
   getEventAnalyticsController,
-  getWorkshopAnalyticsTableController
+  getWorkshopAnalyticsTableController,
+  getCourseStaffController
 } from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -58,3 +59,6 @@ adminRoutes.get("/analytics/workshops", authenticate, getWorkshopAnalyticsTableC
 
 // Create Event from Module
 adminRoutes.post("/events/from-module", authenticate, createEventFromModuleController);
+
+// Course Staff
+adminRoutes.get("/courses/:courseId/staff", authenticate, getCourseStaffController);
