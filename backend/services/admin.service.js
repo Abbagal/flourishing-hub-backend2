@@ -8,11 +8,21 @@ export const createEvent = async (eventData, createdById) => {
     const timestamp = Date.now();
     const uniqueSlug = `${baseSlug}-${timestamp}`;
 
+    // Guard: if endAt equals startAt (admin didn't set an end time), default to startAt + 2 hours
+    const startAt = new Date(eventData.startAt);
+    const endAt = eventData.endAt
+      ? (new Date(eventData.endAt) <= startAt
+          ? new Date(startAt.getTime() + 2 * 60 * 60 * 1000)
+          : new Date(eventData.endAt))
+      : new Date(startAt.getTime() + 2 * 60 * 60 * 1000);
+
     console.log("🔧 Creating event with slug:", uniqueSlug);
 
     const event = await prisma.event.create({
       data: {
         ...eventData,
+        startAt,
+        endAt,
         createdById,
         slug: uniqueSlug
       },
@@ -33,6 +43,15 @@ export const createEvent = async (eventData, createdById) => {
 // MODIFY EVENT
 export const modifyEvent = async (eventId, eventData, updatedById) => {
   const { instructorId, associateInstructorId, ...eventFields } = eventData;
+
+  // Guard: if endAt equals or precedes startAt, default to startAt + 2 hours
+  if (eventFields.startAt && eventFields.endAt) {
+    const s = new Date(eventFields.startAt);
+    const e = new Date(eventFields.endAt);
+    if (e <= s) {
+      eventFields.endAt = new Date(s.getTime() + 2 * 60 * 60 * 1000);
+    }
+  }
 
   const event = await prisma.event.update({
     where: { id: eventId },

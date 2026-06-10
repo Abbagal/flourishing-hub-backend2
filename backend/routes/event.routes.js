@@ -48,7 +48,7 @@ eventRoutes.post(
   validate(bulkCreateEventSchema),
   bulkCreateEventsController
 );
-eventRoutes.get("/", validate(listEventSchema), cacheResponse("events", 30), listEventsController);
+eventRoutes.get("/", validate(listEventSchema), listEventsController);
 eventRoutes.get("/:eventId/record", authenticate, authorize("ADMIN"), getEventRecordController);
 eventRoutes.get("/:eventId/export", authenticate, authorize("ADMIN"), exportEventDataController);
 eventRoutes.get("/:eventId/volunteers", authenticate, authorize("ADMIN"), getEventVolunteersController);
