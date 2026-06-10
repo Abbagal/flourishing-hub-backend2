@@ -23,14 +23,25 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     throw new ApiError(StatusCodes.NOT_FOUND, "Student profile not found for this user");
   }
 
-  // Find the event's module
-  const eventModule = await prisma.eventModule.findFirst({
+  // Find the event's module — auto-create one if none exists
+  let eventModule = await prisma.eventModule.findFirst({
     where: { eventId },
     orderBy: { startAt: "asc" }
   });
 
   if (!eventModule) {
-    throw new ApiError(StatusCodes.NOT_FOUND, `No module found for event: ${eventId}`);
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      throw new ApiError(StatusCodes.NOT_FOUND, `No event found with id: ${eventId}`);
+    }
+    eventModule = await prisma.eventModule.create({
+      data: {
+        eventId,
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt
+      }
+    });
   }
 
   // Upsert ModuleProgress — marks stored here, picked up by getMyAttendance
