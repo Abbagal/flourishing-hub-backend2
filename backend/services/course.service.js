@@ -41,6 +41,7 @@ export const createCourse = async (data) => {
   return prisma.course.create({
     data: {
       name: data.name,
+      code: data.code || null,
       description: data.description,
       posterUrl: data.posterUrl,
       duration: data.duration,
@@ -63,6 +64,7 @@ export const updateCourse = async (courseId, data) => {
 
   const updateData = {};
   if (data.name !== undefined) updateData.name = data.name;
+  if (data.code !== undefined) updateData.code = data.code || null;
   if (data.description !== undefined) updateData.description = data.description;
   if (data.posterUrl !== undefined) updateData.posterUrl = data.posterUrl;
   if (data.duration !== undefined) updateData.duration = data.duration;
