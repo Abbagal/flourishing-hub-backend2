@@ -1,6 +1,8 @@
 import { StatusCodes } from "http-status-codes";
 import { prisma } from "../database/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
+import { sendQuizResultEmail } from "./email.service.js";
+import { createNotification } from "./notification.service.js";
 
 export const submitQuizResult = async ({ email, eventId, score, secret }) => {
   // Validate webhook secret
@@ -15,21 +17,17 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     include: { studentProfile: true }
   });
 
-  if (!user) {
-    throw new ApiError(StatusCodes.NOT_FOUND, `No user found with email: ${email}`);
-  }
+  if (!user) throw new ApiError(StatusCodes.NOT_FOUND, `No user found with email: ${email}`);
+  if (!user.studentProfile) throw new ApiError(StatusCodes.NOT_FOUND, "Student profile not found");
 
-  if (!user.studentProfile) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Student profile not found for this user");
-  }
+  // Fetch event with course to determine pass threshold
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { course: { select: { id: true, isCompulsory: true } } }
+  });
+  if (!event) throw new ApiError(StatusCodes.NOT_FOUND, `No event found with id: ${eventId}`);
 
-  // Fetch event — needed for grace period check and module auto-create
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event) {
-    throw new ApiError(StatusCodes.NOT_FOUND, `No event found with id: ${eventId}`);
-  }
-
-  // Enforce 30-minute grace period: reject submissions after endAt + 30 min
+  // Enforce 30-minute grace period
   if (event.endAt) {
     const gracePeriodEnd = new Date(new Date(event.endAt).getTime() + 30 * 60 * 1000);
     if (new Date() > gracePeriodEnd) {
@@ -40,7 +38,11 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     }
   }
 
-  // Find the event's module — auto-create one if none exists
+  // Dynamic pass threshold: compulsory course requires ≥4, all others ≥3
+  const PASSING_SCORE = event.course?.isCompulsory ? 4 : 3;
+  const passed = score >= PASSING_SCORE;
+
+  // Find or auto-create the event module
   let eventModule = await prisma.eventModule.findFirst({
     where: { eventId },
     orderBy: { startAt: "asc" }
@@ -57,7 +59,7 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     });
   }
 
-  // Upsert ModuleProgress — marks stored here, picked up by getMyAttendance
+  // Upsert ModuleProgress
   const progress = await prisma.moduleProgress.upsert({
     where: {
       studentProfileId_moduleId: {
@@ -65,10 +67,7 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
         moduleId: eventModule.id
       }
     },
-    update: {
-      marksObtained: score,
-      completedAt: new Date()
-    },
+    update: { marksObtained: score, completedAt: new Date() },
     create: {
       studentProfileId: user.studentProfile.id,
       moduleId: eventModule.id,
@@ -77,11 +76,8 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     }
   });
 
-  // Score < 3 → failed; revert attendance to ABSENT so bundle progress doesn't count it
-  const PASSING_SCORE = 3;
-  const passed = score >= PASSING_SCORE;
-
   if (!passed) {
+    // Revert attendance to ABSENT on failure
     const attendanceRecord = await prisma.attendanceRecord.findFirst({
       where: { eventId, userId: user.id }
     });
@@ -97,6 +93,20 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     });
   }
 
+  // Send quiz result email (non-blocking)
+  sendQuizResultEmail(user.email, user.name, event.title, passed, score, PASSING_SCORE).catch(() => {});
+
+  // In-app notification
+  createNotification(
+    user.id,
+    passed ? "success" : "warning",
+    passed ? `Workshop Completed: ${event.title}` : `Workshop Unsuccessful: ${event.title}`,
+    passed
+      ? `You scored ${score}/${PASSING_SCORE <= 3 ? 5 : 5} and passed the workshop. Great work!`
+      : `You scored ${score}/5 (minimum ${PASSING_SCORE}/5 required). Consider registering for a repeat session.`,
+    eventId
+  ).catch(() => {});
+
   return {
     studentName: user.name,
     email: user.email,
@@ -104,6 +114,7 @@ export const submitQuizResult = async ({ email, eventId, score, secret }) => {
     moduleId: eventModule.id,
     marksObtained: progress.marksObtained,
     maxMarks: eventModule.maxMarks,
+    passingScore: PASSING_SCORE,
     passed
   };
 };

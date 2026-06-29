@@ -703,6 +703,229 @@ export const getCourseStaff = async (courseId) => {
   };
 };
 
+// GENERATE MASTER EXCEL EXPORT (4 sheets)
+export const generateExcelExport = async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Flourishing Hub";
+  workbook.created = new Date();
+
+  // Fetch all data
+  const [courses, events] = await Promise.all([
+    prisma.course.findMany({
+      include: {
+        modules: { select: { id: true, title: true } },
+        _count: { select: { events: true, registrations: true } }
+      }
+    }),
+    prisma.event.findMany({
+      include: {
+        course: { select: { id: true, name: true, code: true, isCompulsory: true } },
+        courseModule: { select: { id: true, title: true } },
+        assignments: { include: { user: { select: { id: true, name: true, role: true, instructorProfile: { select: { department: true } } } } } },
+        registrations: {
+          include: {
+            user: {
+              select: {
+                id: true, name: true, email: true,
+                studentProfile: { select: { id: true, rollNumber: true, cohort: true, department: true, programme: true } }
+              }
+            }
+          }
+        },
+        attendances: { select: { userId: true, status: true, markedAt: true } },
+        feedbackEntries: { select: { userId: true, eventRating: true } },
+        modules: {
+          select: {
+            id: true,
+            progressEntries: { select: { studentProfileId: true, marksObtained: true, completedAt: true } }
+          }
+        }
+      },
+      orderBy: { startAt: 'asc' }
+    })
+  ]);
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—';
+
+  // ─── Sheet A: Course-Level Summary ───
+  const sheetA = workbook.addWorksheet('A - Course Summary');
+  sheetA.columns = [
+    { header: 'Course Code', key: 'code', width: 14 },
+    { header: 'Course Title', key: 'name', width: 30 },
+    { header: 'Track Type', key: 'type', width: 16 },
+    { header: 'Total Students Enrolled', key: 'enrolled', width: 22 },
+    { header: 'Total Sessions Run', key: 'sessions', width: 18 },
+    { header: 'Global Attendance Rate (%)', key: 'attendance', width: 26 },
+    { header: 'Avg Cumulative Quiz Score', key: 'avgScore', width: 26 },
+    { header: 'Overall Pass Rate (%)', key: 'passRate', width: 22 },
+  ];
+  sheetA.getRow(1).font = { bold: true };
+
+  for (const course of courses) {
+    const courseEvents = events.filter(e => e.courseId === course.id);
+    const totalReg = course._count.registrations;
+    const totalAttended = courseEvents.reduce((s, e) => s + e.attendances.filter(a => a.status === 'PRESENT').length, 0);
+    const totalPossible = courseEvents.reduce((s, e) => s + e.registrations.length, 0);
+    const allScores = courseEvents.flatMap(e => e.modules.flatMap(m => m.progressEntries.map(p => p.marksObtained).filter(v => v != null)));
+    const avgScore = allScores.length ? (allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2) : '—';
+    const passed = allScores.filter(s => s >= (course.isCompulsory ? 4 : 3)).length;
+    sheetA.addRow({
+      code: course.code || '—',
+      name: course.name,
+      type: course.isCompulsory ? 'Compulsory' : 'Optional',
+      enrolled: totalReg,
+      sessions: courseEvents.length,
+      attendance: totalPossible ? Math.round((totalAttended / totalPossible) * 100) : 0,
+      avgScore,
+      passRate: allScores.length ? Math.round((passed / allScores.length) * 100) : 0,
+    });
+  }
+
+  // ─── Sheet B: Workshop & Session-Level ───
+  const sheetB = workbook.addWorksheet('B - Workshop Sessions');
+  sheetB.columns = [
+    { header: 'Workshop Name', key: 'name', width: 30 },
+    { header: 'Parent Course Code', key: 'courseCode', width: 18 },
+    { header: 'Session ID', key: 'sessionId', width: 14 },
+    { header: 'Target Batch', key: 'batch', width: 16 },
+    { header: 'Date & Time', key: 'date', width: 24 },
+    { header: 'Venue', key: 'venue', width: 20 },
+    { header: 'Lead Instructor', key: 'instructor', width: 24 },
+    { header: 'Associate Instructor', key: 'associate', width: 24 },
+    { header: 'Pre-Registered', key: 'registered', width: 16 },
+    { header: 'Attended (Verified)', key: 'attended', width: 20 },
+    { header: 'Absentees', key: 'absent', width: 12 },
+    { header: 'Passed', key: 'passed', width: 10 },
+    { header: 'Failed', key: 'failed', width: 10 },
+    { header: 'Avg Feedback Rating', key: 'rating', width: 20 },
+  ];
+  sheetB.getRow(1).font = { bold: true };
+
+  for (const event of events) {
+    const instructor = event.assignments.find(a => a.role === 'INSTRUCTOR');
+    const associate = event.assignments.find(a => a.role === 'ASSOCIATE_INSTRUCTOR');
+    const attendedSet = new Set(event.attendances.filter(a => a.status === 'PRESENT').map(a => a.userId));
+    const passingScore = event.course?.isCompulsory ? 4 : 3;
+    const allScores = event.modules.flatMap(m => m.progressEntries.map(p => p.marksObtained).filter(v => v != null));
+    const ratings = event.feedbackEntries.map(f => f.eventRating).filter(Boolean);
+    sheetB.addRow({
+      name: event.title,
+      courseCode: event.course?.code || '—',
+      sessionId: event.id.slice(-8),
+      batch: event.batch || '—',
+      date: fmtDate(event.startAt),
+      venue: event.venue || '—',
+      instructor: instructor?.user?.name || '—',
+      associate: associate?.user?.name || '—',
+      registered: event.registrations.length,
+      attended: attendedSet.size,
+      absent: event.registrations.length - attendedSet.size,
+      passed: allScores.filter(s => s >= passingScore).length,
+      failed: allScores.filter(s => s < passingScore).length,
+      rating: ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : '—',
+    });
+  }
+
+  // ─── Sheet C: Facilitator Evaluation ───
+  const sheetC = workbook.addWorksheet('C - Facilitator Evaluation');
+  sheetC.columns = [
+    { header: 'Instructor Name', key: 'name', width: 26 },
+    { header: 'Department', key: 'dept', width: 22 },
+    { header: 'Role', key: 'role', width: 16 },
+    { header: 'Total Workshops', key: 'workshops', width: 18 },
+    { header: 'Avg Feedback Rating', key: 'rating', width: 22 },
+  ];
+  sheetC.getRow(1).font = { bold: true };
+
+  const facilitatorMap = {};
+  for (const event of events) {
+    const ratings = event.feedbackEntries.map(f => f.eventRating).filter(Boolean);
+    for (const a of event.assignments) {
+      const id = a.user.id;
+      if (!facilitatorMap[id]) {
+        facilitatorMap[id] = {
+          name: a.user.name,
+          dept: a.user.instructorProfile?.department || '—',
+          role: a.role === 'INSTRUCTOR' ? 'Lead' : 'Associate',
+          workshops: 0,
+          ratings: []
+        };
+      }
+      facilitatorMap[id].workshops += 1;
+      facilitatorMap[id].ratings.push(...ratings);
+    }
+  }
+  for (const f of Object.values(facilitatorMap)) {
+    sheetC.addRow({
+      name: f.name,
+      dept: f.dept,
+      role: f.role,
+      workshops: f.workshops,
+      rating: f.ratings.length ? (f.ratings.reduce((a, b) => a + b, 0) / f.ratings.length).toFixed(1) : '—',
+    });
+  }
+
+  // ─── Sheet D: Student Performance Transcript ───
+  const sheetD = workbook.addWorksheet('D - Student Transcripts');
+  sheetD.columns = [
+    { header: 'Student Name', key: 'name', width: 24 },
+    { header: 'Roll Number', key: 'roll', width: 14 },
+    { header: 'Email', key: 'email', width: 28 },
+    { header: 'Programme', key: 'programme', width: 14 },
+    { header: 'Department', key: 'dept', width: 22 },
+    { header: 'Batch Year', key: 'batch', width: 12 },
+    { header: 'Course Code', key: 'courseCode', width: 14 },
+    { header: 'Workshop Name', key: 'workshop', width: 30 },
+    { header: 'Session Date', key: 'date', width: 22 },
+    { header: 'Check-In Timestamp', key: 'checkin', width: 22 },
+    { header: 'Attendance Status', key: 'attendance', width: 18 },
+    { header: 'Quiz Score', key: 'score', width: 12 },
+    { header: 'Feedback Rating', key: 'rating', width: 16 },
+    { header: 'Final Status', key: 'status', width: 14 },
+  ];
+  sheetD.getRow(1).font = { bold: true };
+
+  for (const event of events) {
+    const attendanceMap = Object.fromEntries(event.attendances.map(a => [a.userId, a]));
+    const feedbackMap = Object.fromEntries(event.feedbackEntries.map(f => [f.userId, f.eventRating]));
+    const progressMap = {};
+    event.modules.forEach(mod => {
+      mod.progressEntries.forEach(p => {
+        if (!progressMap[p.studentProfileId]) progressMap[p.studentProfileId] = null;
+        if (p.marksObtained != null) progressMap[p.studentProfileId] = p.marksObtained;
+      });
+    });
+    const passingScore = event.course?.isCompulsory ? 4 : 3;
+
+    for (const reg of event.registrations) {
+      const sp = reg.user.studentProfile;
+      const att = attendanceMap[reg.userId];
+      const score = sp ? progressMap[sp.id] : null;
+      const attStatus = att?.status || 'NOT_MARKED';
+      const finalStatus = attStatus === 'PRESENT' ? 'Present' : attStatus === 'ABSENT' ? 'Absent' : 'Not Marked';
+      sheetD.addRow({
+        name: reg.user.name,
+        roll: sp?.rollNumber || '—',
+        email: reg.user.email,
+        programme: sp?.programme || '—',
+        dept: sp?.department || '—',
+        batch: sp?.cohort || '—',
+        courseCode: event.course?.code || '—',
+        workshop: event.title,
+        date: fmtDate(event.startAt),
+        checkin: att?.markedAt ? fmtDate(att.markedAt) : '—',
+        attendance: attStatus,
+        score: score != null ? `${score} / 5` : '—',
+        rating: feedbackMap[reg.userId] != null ? feedbackMap[reg.userId] : '—',
+        status: finalStatus,
+      });
+    }
+  }
+
+  return workbook.xlsx.writeBuffer();
+};
+
 // DELETE EVENT
 export const deleteEvent = async (eventId) => {
   const event = await prisma.event.delete({

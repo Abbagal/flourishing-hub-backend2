@@ -20,7 +20,8 @@ import {
   createEventFromModuleController,
   getEventAnalyticsController,
   getWorkshopAnalyticsTableController,
-  getCourseStaffController
+  getCourseStaffController,
+  exportExcelController
 } from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -62,3 +63,6 @@ adminRoutes.post("/events/from-module", authenticate, createEventFromModuleContr
 
 // Course Staff
 adminRoutes.get("/courses/:courseId/staff", authenticate, getCourseStaffController);
+
+// Export Master Excel
+adminRoutes.get("/analytics/export-excel", authenticate, exportExcelController);

@@ -451,6 +451,89 @@ export const sendReminderEmail = async (email, name, eventTitle, eventDate, even
   }
 };
 
+// Send quiz result email (pass or fail)
+export const sendQuizResultEmail = async (email, name, eventTitle, passed, score, passingScore) => {
+  try {
+    const transporter = createTransporter();
+    if (!transporter) return true;
+    const color = passed ? '#10b981' : '#ef4444';
+    const badge = passed ? '🟩 Workshop Completed' : '🟥 Workshop Unsuccessful';
+    const mailOptions = {
+      from: `"Flourishing Hub, IIT Bombay" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: passed ? `Completed: Milestone Passed for ${eventTitle}` : `Action Required: Attendance Resolution for ${eventTitle}`,
+      html: `<!DOCTYPE html><html><head><style>
+        body{font-family:Arial,sans-serif;line-height:1.6;color:#333}
+        .container{max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9}
+        .header{background:${color};color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0}
+        .content{background:white;padding:30px;border-radius:0 0 10px 10px}
+        .box{background:${passed ? '#f0fdf4' : '#fef2f2'};border-left:4px solid ${color};padding:15px;margin:20px 0;border-radius:0 8px 8px 0}
+      </style></head><body><div class="container">
+        <div class="header"><h1>${badge}</h1><p>IIT Bombay Flourishing Hub</p></div>
+        <div class="content">
+          <h2>Hello ${name},</h2>
+          ${passed
+            ? `<p>Congratulations! You have successfully completed the workshop and your transcript has been updated.</p>`
+            : `<p>Unfortunately, you did not meet the passing criteria for this workshop. We encourage you to register again.</p>`}
+          <div class="box">
+            <p><strong>📚 Workshop:</strong> ${eventTitle}</p>
+            <p><strong>📊 Your Score:</strong> ${score} / 5</p>
+            <p><strong>✅ Passing Score:</strong> ${passingScore} / 5</p>
+            <p><strong>🏆 Result:</strong> ${passed ? 'PASSED' : 'FAILED'}</p>
+          </div>
+          ${!passed ? `<p>You can register for a repeated session of this workshop via the course catalog.</p>` : ''}
+          <p>Best regards,<br>Flourishing Hub Team<br>IIT Bombay</p>
+        </div>
+      </div></body></html>`
+    };
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error("Error sending quiz result email:", error);
+    return false;
+  }
+};
+
+// Send course bundle registration email
+export const sendCourseBundleEmail = async (email, name, courseTitle, courseCode, workshopTitles) => {
+  try {
+    const transporter = createTransporter();
+    if (!transporter) return true;
+    const workshopList = workshopTitles.map((t, i) => `<li>${i + 1}. ${t}</li>`).join('');
+    const mailOptions = {
+      from: `"Flourishing Hub, IIT Bombay" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Confirmation: Enrollment in ${courseTitle}`,
+      html: `<!DOCTYPE html><html><head><style>
+        body{font-family:Arial,sans-serif;line-height:1.6;color:#333}
+        .container{max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9}
+        .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0}
+        .content{background:white;padding:30px;border-radius:0 0 10px 10px}
+        .box{background:#f0f7ff;border-left:4px solid #667eea;padding:15px;margin:20px 0;border-radius:0 8px 8px 0}
+        ul{margin:8px 0;padding-left:20px}
+      </style></head><body><div class="container">
+        <div class="header"><h1>🎉 Course Enrollment Confirmed!</h1><p>IIT Bombay Flourishing Hub</p></div>
+        <div class="content">
+          <h2>Hello ${name},</h2>
+          <p>You have been successfully enrolled in the following course bundle:</p>
+          <div class="box">
+            <p><strong>📚 Course:</strong> ${courseTitle}${courseCode ? ` (${courseCode})` : ''}</p>
+            <p><strong>📋 Enrolled Workshops:</strong></p>
+            <ul>${workshopList}</ul>
+          </div>
+          <p>You are now registered for all ${workshopTitles.length} workshops above. Details will appear on your dashboard.</p>
+          <p>Best regards,<br>Flourishing Hub Team<br>IIT Bombay</p>
+        </div>
+      </div></body></html>`
+    };
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error("Error sending course bundle email:", error);
+    return false;
+  }
+};
+
 // Send password reset email
 export const sendPasswordResetEmail = async (email, name, resetLink) => {
   try {

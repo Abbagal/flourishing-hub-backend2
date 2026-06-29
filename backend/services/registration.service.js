@@ -2,24 +2,17 @@ import { StatusCodes } from "http-status-codes";
 
 import { prisma } from "../database/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
-import { sendRegistrationConfirmationEmail } from "./email.service.js";
+import { sendRegistrationConfirmationEmail, sendCourseBundleEmail } from "./email.service.js";
 import { createNotification } from "./notification.service.js";
 
 export const registerForEvent = async ({ eventId, asVolunteer }, user) => {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     include: {
-      registrations: {
-        where: {
-          isVolunteer: true
-        },
-        select: {
-          id: true
-        }
-      },
-      _count: {
-        select: { registrations: true }
-      }
+      registrations: { where: { isVolunteer: true }, select: { id: true } },
+      _count: { select: { registrations: true } },
+      course: { select: { id: true, name: true, code: true, isCompulsory: true } },
+      courseModule: { select: { id: true, title: true } }
     }
   });
 
@@ -80,17 +73,29 @@ export const registerForEvent = async ({ eventId, asVolunteer }, user) => {
   });
 
   // Send confirmation email (non-blocking)
-  sendRegistrationConfirmationEmail(user.email, user.name, event.title, event.startAt, event.venue).catch(() => {});
+  if (event.course) {
+    // Course bundle registration — fetch all workshop titles for the email
+    prisma.courseModule.findMany({
+      where: { courseId: event.course.id },
+      orderBy: { order: 'asc' },
+      select: { title: true }
+    }).then(modules => {
+      const titles = modules.map(m => m.title);
+      sendCourseBundleEmail(user.email, user.name, event.course.name, event.course.code, titles).catch(() => {});
+    }).catch(() => {});
+  } else {
+    sendRegistrationConfirmationEmail(user.email, user.name, event.title, event.startAt, event.venue).catch(() => {});
+  }
 
   // In-app notification
   const dateStr = new Date(event.startAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  createNotification(
-    user.id,
-    "info",
-    `Registered: ${event.title}`,
-    `You've successfully registered for "${event.title}" on ${dateStr}.`,
-    eventId
-  ).catch(() => {});
+  const notifTitle = event.course
+    ? `Registered: ${event.course.name}${event.course.code ? ` (${event.course.code})` : ''}`
+    : `Registered: ${event.title}`;
+  const notifBody = event.course
+    ? `Successfully registered for Course Bundle "${event.course.name}". You are enrolled in all workshops.`
+    : `You've successfully registered for "${event.title}" on ${dateStr}.`;
+  createNotification(user.id, "info", notifTitle, notifBody, eventId).catch(() => {});
 
   return registration;
 };

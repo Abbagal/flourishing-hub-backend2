@@ -19,7 +19,8 @@ import {
   createEventFromModule,
   getEventAnalytics,
   getWorkshopAnalyticsTable,
-  getCourseStaff
+  getCourseStaff,
+  generateExcelExport
 } from "../services/admin.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -366,4 +367,16 @@ export const getCourseStaffController = asyncHandler(async (req, res) => {
   const { courseId } = req.params;
   const data = await getCourseStaff(courseId);
   res.status(StatusCodes.OK).json({ success: true, data });
+});
+
+// EXPORT MASTER EXCEL (4 sheets)
+export const exportExcelController = asyncHandler(async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Admin role required");
+  }
+  const buffer = await generateExcelExport();
+  const filename = `flourishing-hub-report-${new Date().toISOString().split('T')[0]}.xlsx`;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.status(StatusCodes.OK).send(buffer);
 });
